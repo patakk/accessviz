@@ -33,6 +33,25 @@
       </div>
     </section>
 
+    <section class="panel timeline-panel">
+      <div class="timeline-header">
+        <h2>Time window</h2>
+        <div class="timeline-values">
+          <span>From: <strong id="time-start-label">—</strong></span>
+          <span>To: <strong id="time-end-label">—</strong></span>
+        </div>
+      </div>
+      <div class="timeline-controls">
+        <div id="time-progress" class="timeline-progress"></div>
+        <input id="time-start" type="range" min="0" max="100" value="0" step="1">
+        <input id="time-end" type="range" min="0" max="100" value="100" step="1">
+      </div>
+      <div class="timeline-scale">
+        <span id="time-min-label">—</span>
+        <span id="time-max-label">—</span>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="table-header">
         <h2>Recent hits</h2>
@@ -70,9 +89,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
-  <script src=
-"https://d3js.org/d3-geo-projection.v2.min.js">
-    </script>
+  <script src="https://d3js.org/d3-geo-projection.v2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/solar-calculator@0.3.0/dist/solar-calculator.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

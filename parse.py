@@ -175,7 +175,7 @@ def main():
         "total_hits": len(hits),
         "unique_ips": len(unique_ips),
         "ips": sorted(ip_info.values(), key=lambda x: x["count"], reverse=True),
-        "hits": hits[-1000:],  # keep recent slice for table
+        "hits": hits[-2000:],  # keep recent slice for table
     }
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         f.write(json.dumps(payload, indent=2))

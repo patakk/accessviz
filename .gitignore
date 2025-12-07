@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.python-version
+GeoLite2-City.mmdb
+README.md
+hanzi.access.log
+scripts/
+update-access.log
+web/data.json
+web/node_modules/
+web/package-lock.json
+web/package.json
+

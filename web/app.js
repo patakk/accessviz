@@ -7,6 +7,13 @@ const filterCityEl = document.getElementById('filter-city');
 const filterDeviceEl = document.getElementById('filter-device');
 const tableBody = document.querySelector('#hits-table tbody');
 const projectionEl = document.getElementById('projection');
+const timeStartEl = document.getElementById('time-start');
+const timeEndEl = document.getElementById('time-end');
+const timeStartLabelEl = document.getElementById('time-start-label');
+const timeEndLabelEl = document.getElementById('time-end-label');
+const timeMinLabelEl = document.getElementById('time-min-label');
+const timeMaxLabelEl = document.getElementById('time-max-label');
+const timeProgressEl = document.getElementById('time-progress');
 
 const dpr = window.devicePixelRatio || 1;
 const baseWidth = 900;
@@ -37,16 +44,89 @@ let countryCounts = new Map();
 let dragging = false;
 let lastPos = null;
 let allHits = [];
+let timeDomain = { min: null, max: null };
+let generatedAt = '';
 let currentFilters = {
   text: '',
   country: 'all',
   city: 'all',
   device: 'all',
+  startTs: null,
+  endTs: null,
 }; 
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 const isMobile = () => window.innerWidth <= 800;
+
+const formatTs = (ts) => {
+  if (!ts || Number.isNaN(ts)) return '—';
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+};
+
+const antipode = ([longitude, latitude]) => [longitude + 180, -latitude];
+
+function getSunPosition(now = new Date()) {
+  const day = new Date(+now);
+  day.setUTCHours(0, 0, 0, 0);
+  const t = solar.century(now);
+  const longitude = (day - now) / 864e5 * 360 - 180;
+  return [longitude - solar.equationOfTime(t) / 4, solar.declination(t)];
+}
+
+function getNightPolygon() {
+  const sun = getSunPosition();
+  const night = d3.geoCircle()
+    .radius(90)
+    .center(antipode(sun))
+    ();
+  return night;
+}
+
+function aggregateIps(hits) {
+  const map = new Map();
+  for (const h of hits) {
+    const entry = map.get(h.ip) || {
+      ip: h.ip,
+      count: 0,
+      first_seen: h.ts,
+      last_seen: h.ts,
+      country: h.country,
+      city: h.city,
+      lat: h.lat,
+      lon: h.lon,
+      ua_type: h.ua_type,
+    };
+    entry.count += 1;
+    entry.last_seen = h.ts;
+    if (!entry.country && h.country) entry.country = h.country;
+    if (!entry.city && h.city) entry.city = h.city;
+    if ((entry.lat == null || entry.lon == null) && h.lat != null && h.lon != null) {
+      entry.lat = h.lat;
+      entry.lon = h.lon;
+    }
+    if (!entry.ua_type && h.ua_type) entry.ua_type = h.ua_type;
+    map.set(h.ip, entry);
+  }
+  return Array.from(map.values());
+}
+
+function updateCountryCounts(ips) {
+  countryCounts = new Map();
+  if (!land) return;
+  for (const f of land.features) countryCounts.set(f, 0);
+  for (const ip of ips) {
+    if (ip.lat == null || ip.lon == null) continue;
+    const coord = [ip.lon, ip.lat];
+    for (const f of land.features) {
+      if (d3.geoContains(f, coord)) {
+        countryCounts.set(f, (countryCounts.get(f) || 0) + 1);
+        break;
+      }
+    }
+  }
+}
 
 function resizeCanvas() {
   if (isMobile() && mode === 'wide') mode = 'square';
@@ -128,12 +208,20 @@ function drawLand() {
     ctx.beginPath();
     geoPath(feature);
     const c = countryCounts.get(feature) || 0;
-    const alpha = c > 0 ? Math.min(0.8, 0.2 + Math.log10(c + 1) * 0.6) : 0.1;
+    const alpha = c > 0 ? Math.min(0.8, 0.2 + Math.log10(c + 1) * 0.6) : 0.2;
     ctx.fillStyle = `rgba(150,150,150,${alpha})`;
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.stroke();
   }
+}
+
+function drawNight() {
+  const night = getNightPolygon();
+  ctx.beginPath();
+  geoPath(night);
+  ctx.fillStyle = "rgba(5, 0, 0, 0.5)";
+  ctx.fill();
 }
 
 function drawPoints() {
@@ -171,6 +259,7 @@ function draw() {
   }
   drawSphere();
   drawLand();
+  drawNight();
   drawGraticule();
   drawPoints();
 }
@@ -184,10 +273,10 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
-function renderStats(data) {
+function renderStats(totalHits, uniqueIps) {
   statsEl.innerHTML = `
-    <div><strong>${data.total_hits}</strong> hits &nbsp;|&nbsp; <strong>${data.unique_ips}</strong> unique IPs</div>
-    <div>Generated: ${data.generated_at}</div>
+    <div><strong>${totalHits}</strong> hits &nbsp;|&nbsp; <strong>${uniqueIps}</strong> unique IPs</div>
+    <div>Generated: ${generatedAt}</div>
   `;
 }
 
@@ -202,6 +291,18 @@ function renderCountry(code) {
   const flag = countryCodeToFlag(code);
   const label = code.toUpperCase();
   return flag ? `<span class="flag">${flag}</span><span>${label}</span>` : label;
+}
+
+function hitMatchesFilters(h, filters = currentFilters, textHay = null) {
+  const q = (filters.text || '').trim().toLowerCase();
+  const hay = textHay || `${h.ip} ${h.country || ''} ${h.city || ''} ${h.ua_type || ''} ${h.path || ''} ${h.request || ''}`.toLowerCase();
+  if (q && !hay.includes(q)) return false;
+  if (filters.country !== 'all' && (h.country || '').toLowerCase() !== filters.country.toLowerCase()) return false;
+  if (filters.city !== 'all' && (h.city || '').toLowerCase() !== filters.city.toLowerCase()) return false;
+  if (filters.device !== 'all' && (h.ua_type || '').toLowerCase() !== filters.device.toLowerCase()) return false;
+  if (filters.startTs !== null && h._ts && h._ts < filters.startTs) return false;
+  if (filters.endTs !== null && h._ts && h._ts > filters.endTs) return false;
+  return true;
 }
 
 function populateFilters(hits) {
@@ -235,14 +336,13 @@ function populateFilters(hits) {
   addOptions(filterDeviceEl, devices);
 }
 
-function renderTable(hits, filters = currentFilters) {
-  const q = (filters.text || '').trim().toLowerCase();
+function renderTable(hits, summaryList = points, filters = currentFilters) {
   const hitsByIp = {};
   for (const h of hits) {
     (hitsByIp[h.ip] = hitsByIp[h.ip] || []).push(h);
   }
   const rows = [];
-  const summary = points.map(p => ({
+  const summary = summaryList.map(p => ({
     ip: p.ip,
     country: p.country || '',
     city: p.city || '',
@@ -250,18 +350,9 @@ function renderTable(hits, filters = currentFilters) {
     count: p.count || 0,
   })).sort((a,b) => b.count - a.count);
 
-  const matchHit = (h) => {
-    const textHay = `${h.ip} ${h.country || ''} ${h.city || ''} ${h.ua_type || ''} ${h.path || ''} ${h.request || ''}`.toLowerCase();
-    if (q && !textHay.includes(q)) return false;
-    if (filters.country !== 'all' && (h.country || '').toLowerCase() !== filters.country.toLowerCase()) return false;
-    if (filters.city !== 'all' && (h.city || '').toLowerCase() !== filters.city.toLowerCase()) return false;
-    if (filters.device !== 'all' && (h.ua_type || '').toLowerCase() !== filters.device.toLowerCase()) return false;
-    return true;
-  };
-
   for (const s of summary) {
     const hlist = hitsByIp[s.ip] || [];
-    const filteredDetails = hlist.filter(matchHit);
+    const filteredDetails = hlist.filter((h) => hitMatchesFilters(h, filters));
     if (filteredDetails.length === 0) continue;
     const uaLabel = filteredDetails[0]?.ua_type || s.ua_type || '';
     rows.push(`
@@ -300,6 +391,27 @@ function renderTable(hits, filters = currentFilters) {
       tr.lastElementChild.innerHTML = open ? '&#9650;' : '&#9660;';
     });
   });
+}
+
+function applyFilters() {
+  const filteredHits = allHits.filter((h) => hitMatchesFilters(h, currentFilters));
+  const ipSummary = aggregateIps(filteredHits);
+  points = ipSummary.filter(p => p.lat !== null && p.lat !== undefined && p.lon !== null && p.lon !== undefined);
+  renderTable(filteredHits, ipSummary, currentFilters);
+  renderStats(filteredHits.length, ipSummary.length);
+  updateCountryCounts(ipSummary);
+  draw();
+}
+
+function updateTimelineProgress() {
+  if (!timeDomain.min || !timeDomain.max) return;
+  const span = timeDomain.max - timeDomain.min || 1;
+  const startPct = clamp(((currentFilters.startTs ?? timeDomain.min) - timeDomain.min) / span, 0, 1) * 100;
+  const endPct = clamp(((currentFilters.endTs ?? timeDomain.max) - timeDomain.min) / span, 0, 1) * 100;
+  const left = Math.min(startPct, endPct);
+  const width = Math.max(0, Math.abs(endPct - startPct));
+  timeProgressEl.style.left = `${left}%`;
+  timeProgressEl.style.width = `${width}%`;
 }
 
 function enableDrag() {
@@ -367,40 +479,46 @@ async function load() {
 
   const res = await fetch('data.json?ts=' + Date.now());
   const data = await res.json();
-  renderStats(data);
-  points = (data.ips || []).filter(p => p.lat !== null && p.lat !== undefined && p.lon !== null && p.lon !== undefined);
-  allHits = data.hits || [];
-  populateFilters(allHits);
-  renderTable(allHits);
-  // country counts by spatial contain
-  countryCounts = new Map();
-  const ips = data.ips || [];
-  for (const f of land.features) countryCounts.set(f, 0);
-  for (const ip of ips) {
-    if (ip.lat == null || ip.lon == null) continue;
-    const coord = [ip.lon, ip.lat];
-    for (const f of land.features) {
-      if (d3.geoContains(f, coord)) {
-        countryCounts.set(f, (countryCounts.get(f) || 0) + 1);
-        break;
-      }
-    }
+  generatedAt = data.generated_at;
+  allHits = (data.hits || []).map(h => ({ ...h, _ts: Date.parse(h.ts) }));
+  if (allHits.length > 0) {
+    timeDomain.min = Math.min(...allHits.map(h => h._ts || Date.now()));
+    timeDomain.max = Math.max(...allHits.map(h => h._ts || Date.now()));
+  } else {
+    const nowTs = Date.now();
+    timeDomain.min = nowTs;
+    timeDomain.max = nowTs;
   }
+  currentFilters.startTs = timeDomain.min;
+  currentFilters.endTs = timeDomain.max;
+  timeStartEl.min = timeDomain.min;
+  timeStartEl.max = timeDomain.max;
+  timeEndEl.min = timeDomain.min;
+  timeEndEl.max = timeDomain.max;
+  timeStartEl.value = timeDomain.min;
+  timeEndEl.value = timeDomain.max;
+  timeMinLabelEl.textContent = formatTs(timeDomain.min);
+  timeMaxLabelEl.textContent = formatTs(timeDomain.max);
+  timeStartLabelEl.textContent = formatTs(currentFilters.startTs);
+  timeEndLabelEl.textContent = formatTs(currentFilters.endTs);
+  populateFilters(allHits);
+  updateTimelineProgress();
+  applyFilters();
   filterEl.addEventListener('input', (e) => {
     currentFilters.text = e.target.value;
-    renderTable(allHits);
+    applyFilters();
   });
   filterCountryEl.addEventListener('change', (e) => {
     currentFilters.country = e.target.value;
-    renderTable(allHits);
+    applyFilters();
   });
   filterCityEl.addEventListener('change', (e) => {
     currentFilters.city = e.target.value;
-    renderTable(allHits);
+    applyFilters();
   });
   filterDeviceEl.addEventListener('change', (e) => {
     currentFilters.device = e.target.value;
-    renderTable(allHits);
+    applyFilters();
   });
   projectionEl.addEventListener('change', (e) => {
     projectionName = e.target.value;
@@ -411,6 +529,27 @@ async function load() {
     setupProjection();
     draw();
   });
+  const updateTimeFromInputs = (apply = false) => {
+    let startVal = Number(timeStartEl.value);
+    let endVal = Number(timeEndEl.value);
+    if (Number.isNaN(startVal)) startVal = timeDomain.min;
+    if (Number.isNaN(endVal)) endVal = timeDomain.max;
+    if (startVal > endVal) {
+      [startVal, endVal] = [endVal, startVal];
+    }
+    currentFilters.startTs = startVal;
+    currentFilters.endTs = endVal;
+    timeStartEl.value = startVal;
+    timeEndEl.value = endVal;
+    timeStartLabelEl.textContent = formatTs(startVal);
+    timeEndLabelEl.textContent = formatTs(endVal);
+    updateTimelineProgress();
+    if (apply) applyFilters();
+  };
+  timeStartEl.addEventListener('input', () => updateTimeFromInputs(false));
+  timeEndEl.addEventListener('input', () => updateTimeFromInputs(false));
+  timeStartEl.addEventListener('change', () => updateTimeFromInputs(true));
+  timeEndEl.addEventListener('change', () => updateTimeFromInputs(true));
 }
 
 load().then(() => {

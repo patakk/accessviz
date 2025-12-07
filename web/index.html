@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Globe Access</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <h1>Access
+        <a class="report-link" href="/hanzi-report.html" title="Hanzi report" aria-label="Hanzi report">📄</a>
+        </h1>
+      </div>
+      <div class="stats" id="stats"></div>
+    </header>
+
+    <section class="panel globe-wrap">
+      <button class="globe-toggle" id="size-toggle">&#9638;</button>
+      <canvas id="globe" width="900" height="500"></canvas>
+      <div class="globe-controls">
+        <label for="projection">Projection:</label>
+        <select id="projection">
+          <option value="orthographic">Orthographic (globe)</option>
+          <option value="mercator">Mercator</option>
+          <option value="vanDerGrinten">Van der Grinten</option>
+        </select>
+      </div>
+      <div class="legend">
+        <span class="dot"></span> Visitor with geo (drag to rotate)
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="table-header">
+        <h2>Recent hits</h2>
+        <div class="filters">
+          <input id="filter" type="search" placeholder="Search IP, path, UA">
+          <select id="filter-country">
+            <option value="all">All countries</option>
+          </select>
+          <select id="filter-city">
+            <option value="all">All cities</option>
+          </select>
+          <select id="filter-device">
+            <option value="all">All devices</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="hits-table">
+          <thead>
+            <tr>
+              <th>IP</th>
+              <th>Country</th>
+              <th>City</th>
+              <th>Device</th>
+              <th>Path</th>
+              <th>Status</th>
+              <th class="col-when">When</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+  <script src=
+"https://d3js.org/d3-geo-projection.v2.min.js">
+    </script>
+  <script src="app.js"></script>
+</body>
+</html>

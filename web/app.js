@@ -451,7 +451,7 @@ function enableZoom() {
   const onWheel = (e) => {
     e.preventDefault();
     const delta = e.deltaY;
-    const factor = delta > 0 ? 0.9 : 1.1;
+    const factor = delta > 0 ? 0.95 : 1.05;
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;

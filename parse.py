@@ -6,6 +6,7 @@ No external Python deps required.
 """
 import argparse
 import datetime as dt
+import glob
 import json
 import os
 import re
@@ -100,39 +101,41 @@ def main():
     log_path = args.log_path
     geo_db_path = args.geo_db
 
-    if not os.path.exists(log_path):
-        raise SystemExit(f"Log not found: {log_path}")
+    log_files = sorted(f for f in glob.glob(f"{log_path}*") if os.path.isfile(f))
+    if not log_files:
+        raise SystemExit(f"No log files found for pattern: {log_path}*")
     web_dir = os.path.dirname(OUTPUT_PATH)
     os.makedirs(web_dir, exist_ok=True)
 
     hits = []
     ip_info: Dict[str, Dict] = {}
-    with open(log_path) as f:
-        for line in f:
-            m = LOG_RE.match(line.strip())
-            if not m:
-                continue
-            data = m.groupdict()
-            ts_iso = parse_timestamp(data["ts"])
-            cf_ip = data.get("cf_ip") or data["ip"]
-            host = data.get("host")
-            path = data["req"].split(" ")[1] if " " in data["req"] else data["req"]
-            ua_type = classify_device(data["ua"])
-            hit = {
-                "ip": cf_ip,
-                "orig_ip": data["ip"],
-                "ts": ts_iso,
-                "request": data["req"],
-                "path": path,
-                "status": int(data["status"]),
-                "bytes": int(data["bytes"]),
-                "referer": data["ref"] if data["ref"] != "-" else None,
-                "ua": data["ua"],
-                "ua_type": ua_type,
-                "host": host,
-                "country_hint": data.get("cf_country"),
-            }
-            hits.append(hit)
+    for lf in log_files:
+        with open(lf) as f:
+            for line in f:
+                m = LOG_RE.match(line.strip())
+                if not m:
+                    continue
+                data = m.groupdict()
+                ts_iso = parse_timestamp(data["ts"])
+                cf_ip = data.get("cf_ip") or data["ip"]
+                host = data.get("host")
+                path = data["req"].split(" ")[1] if " " in data["req"] else data["req"]
+                ua_type = classify_device(data["ua"])
+                hit = {
+                    "ip": cf_ip,
+                    "orig_ip": data["ip"],
+                    "ts": ts_iso,
+                    "request": data["req"],
+                    "path": path,
+                    "status": int(data["status"]),
+                    "bytes": int(data["bytes"]),
+                    "referer": data["ref"] if data["ref"] != "-" else None,
+                    "ua": data["ua"],
+                    "ua_type": ua_type,
+                    "host": host,
+                    "country_hint": data.get("cf_country"),
+                }
+                hits.append(hit)
 
     unique_ips = {h["ip"] for h in hits}
     geo_cache: Dict[str, Dict] = {}

@@ -36,6 +36,7 @@ let panY = 0;
 
 let points = [];
 let land = null;
+let us_states = null;
 let projection;
 let geoPath;
 let graticule;
@@ -213,6 +214,15 @@ function drawLand() {
     ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.stroke();
+  }
+  if (us_states) {
+    ctx.lineWidth = 0.6;
+    for (const feature of us_states.features) {
+      ctx.beginPath();
+      geoPath(feature);
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.stroke();
+    }
   }
 }
 
@@ -478,6 +488,9 @@ async function load() {
   await resizeCanvas();
   const world = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json').then(r => r.json());
   land = topojson.feature(world, world.objects.countries);
+
+  const us = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(r => r.json());
+  us_states = topojson.feature(us, us.objects.states);
 
   const res = await fetch('data.json?ts=' + Date.now());
   const data = await res.json();

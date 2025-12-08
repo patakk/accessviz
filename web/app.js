@@ -274,9 +274,11 @@ function animate() {
 }
 
 function renderStats(totalHits, uniqueIps) {
+  const genDate = generatedAt ? new Date(generatedAt) : null;
+  const genLocal = genDate ? genDate.toLocaleString() : generatedAt;
   statsEl.innerHTML = `
     <div><strong>${totalHits}</strong> hits &nbsp;|&nbsp; <strong>${uniqueIps}</strong> unique IPs</div>
-    <div>Generated: ${generatedAt}</div>
+    <div>Generated: ${genLocal}</div>
   `;
 }
 
